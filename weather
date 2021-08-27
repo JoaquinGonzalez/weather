@@ -1,0 +1,91 @@
+#!/bin/sh
+
+function getconfig {
+    if [ -a ~/.config/weather/config.json ];
+    then
+        config=$(cat ~/.config/weather/config.json)
+        key=$(echo $config | jq .key | grep -oP '[a-z0-9]+')
+        lon=$(echo $config | jq .lon | grep -oP '[0-9\.-]+')
+        lat=$(echo $config | jq .lat | grep -oP '[0-9\.-]+')
+        units=$(echo $config | jq .units | grep -oP '[a-z]+')
+    else
+        echo "Error: Missing configuration file"
+        exit
+    fi
+}
+
+function update {
+    getconfig
+    url="https://api.openweathermap.org/data/2.5/onecall?lat=$lat&lon=$lon&units=$units&appid=$key"
+    current=$(curl -s -X GET -H 'Content-Type: application/json' $url)
+    pcurrent=$(echo $current | jq > /tmp/weather.txt)
+}
+
+function autoupdate {
+    if [ -a /tmp/weather.txt ]
+    then
+        current_date=$(date +'%s')
+        file_date=$(stat -c %Y /tmp/weather.txt)
+        diff=$(expr $current_date - $file_date)
+        diff=$(expr $diff / 60)
+
+        if [ $diff -ge 10 ]
+        then
+            update
+        fi
+    else
+        update
+    fi
+}
+
+function getcurrenttemp {
+    _c=$(cat /tmp/weather.txt | jq .current.temp | grep -o '^[0-9]\+')
+}
+
+function gettomorrowtempmin {
+    _c=$(cat /tmp/weather.txt | jq .daily[1].temp.min | grep -o '^[0-9]\+')
+}
+
+function gettomorrowtempmax {
+    _c=$(cat /tmp/weather.txt | jq .daily[1].temp.max | grep -o '^[0-9]\+')
+}
+
+function printcurrenttemp {
+    getcurrenttemp
+    echo $_c°C
+}
+
+function printhelp {
+    echo "Weather"
+    echo "-a autoupdate"
+    echo "-u force update"
+    echo "-c print current temperature"
+    echo "-h print this message"
+}
+
+function printall {
+    getcurrenttemp
+    echo "Current: $_c°C"
+    gettomorrowtempmin
+    echo "Tomorrow (Min): $_c°C"
+    gettomorrowtempmax
+    echo "Tomorrow (Max): $_c°C"
+}
+
+case $1 in
+    "-a")
+        autoupdate
+        ;;
+    "-u")
+        update
+        ;;
+    "-c")
+        printcurrenttemp
+        ;;
+    "-h")
+        printhelp
+        ;;
+    "")
+        printall
+        ;;
+esac
